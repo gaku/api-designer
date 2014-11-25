@@ -317,10 +317,9 @@
             return name.replace(/[\\\/][^\\\/]*$/, '').split(/[\\\/]/);
           })
           .reduce(function (prefix, name) {
-            var len = prefix.length > name.length ? name.length : prefix.length;
-
-            // Iterate over each part and find the common prefix.
-            for (var i = 0; i < len; i++) {
+            // Iterate over each part and check the prefix matches. If a part
+            // does not match, return everything before it as the new prefix.
+            for (var i = 0; i < prefix.length; i++) {
               if (name[i] !== prefix[i]) {
                 return name.slice(0, i);
               }
