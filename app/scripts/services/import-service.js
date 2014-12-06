@@ -19,11 +19,11 @@
        */
       self.mergeFile = function (directory, file) {
         // Import every other file as normal.
-        if (!isZip(file)) {
+        if (!self.isZip(file)) {
           return self.importFile(directory, file);
         }
 
-        return readFileAsText(file)
+        return self.readFileAsText(file)
           .then(function (contents) {
             return mergeZip(directory, contents);
           });
@@ -194,6 +194,52 @@
       };
 
       /**
+       * Check whether a file is a zip.
+       *
+       * @param  {File}    file
+       * @return {Boolean}
+       */
+      self.isZip = function (file) {
+        // Can't check `file.type` as it's empty when read from a `FileEntry`.
+        return file instanceof window.File && (/\.zip$/i).test(file.name);
+      };
+
+      /**
+       * Read a file object as a text file.
+       *
+       * @param  {File}    file
+       * @return {Promise}
+       */
+      self.readFileAsText = function (file) {
+        var deferred = $q.defer();
+        var reader   = new FileReader();
+
+        reader.onload = function () {
+          return deferred.resolve(reader.result);
+        };
+
+        reader.onerror = function () {
+          return deferred.reject(reader.error);
+        };
+
+        reader.readAsBinaryString(file);
+
+        return deferred.promise;
+      };
+
+      /**
+       * Parse a ZIP file.
+       *
+       * @param  {String} contents
+       * @return {Object}
+       */
+      self.parseZip = function (contents) {
+        var zip = new JSZip(contents);
+
+        return sanitizeZipFiles(zip.files);
+      };
+
+      /**
        * Import a single file at specific path.
        *
        * @param  {Object}  directory
@@ -202,9 +248,10 @@
        * @return {Promise}
        */
       function importFileToPath (directory, path, file) {
-        return readFileAsText(file)
+        return self.readFileAsText(file)
           .then(function (contents) {
-            if (isZip(file)) {
+            if (self.isZip(file)) {
+              // Remove the zip file name from the end of the path.
               var dirname = path.replace(/[\\\/][^\\\/]*$/, '');
 
               return ramlRepository.createDirectory(directory, dirname)
@@ -218,17 +265,6 @@
       }
 
       /**
-       * Check whether a file is a zip.
-       *
-       * @param  {File}    file
-       * @return {Boolean}
-       */
-      function isZip (file) {
-        // Can't check `file.type` as it's empty when read from a `FileEntry`.
-        return (/\.zip$/i).test(file.name);
-      }
-
-      /**
        * Merge a zip with a directory in the file system.
        *
        * @param  {Object}  directory
@@ -236,8 +272,7 @@
        * @return {Promise}
        */
       function mergeZip (directory, contents) {
-        var zip   = new JSZip(contents);
-        var files = removeCommonFilePrefixes(sanitizeZipFiles(zip.files));
+        var files = removeCommonFilePrefixes(self.parseZip(contents));
 
         return importZipFiles(directory, files);
       }
@@ -250,8 +285,7 @@
        * @return {Promise}
        */
       function importZip (directory, contents) {
-        var zip   = new JSZip(contents);
-        var files = sanitizeZipFiles(zip.files);
+        var files = self.parseZip(contents);
 
         return importZipFiles(directory, files);
       }
@@ -268,12 +302,7 @@
 
         Object.keys(files).filter(canImport).forEach(function (name) {
           promise = promise.then(function () {
-            // Directories seem to be stored under the files object.
-            if (/\/$/.test(name)) {
-              return createDirectory(directory, name);
-            }
-
-            return self.createFile(directory, name, files[name].asText());
+            return self.createFile(directory, name, files[name]);
           });
         });
 
@@ -290,11 +319,11 @@
         var files = {};
 
         Object.keys(originalFiles).forEach(function (name) {
-          if (/^__MACOSX\//.test(name)) {
+          if (/^__MACOSX\//.test(name) || /\/$/.test(name)) {
             return;
           }
 
-          files[name] = originalFiles[name];
+          files[name] = originalFiles[name].asText();
         });
 
         return files;
@@ -425,39 +454,6 @@
         } while (pathExists(path));
 
         return path;
-      }
-
-      /**
-       * Create a directory in the file system.
-       *
-       * @param  {String}  name
-       * @return {Promise}
-       */
-      function createDirectory (directory, name) {
-        return ramlRepository.createDirectory(directory, name);
-      }
-
-      /**
-       * Read a file object as a text file.
-       *
-       * @param  {File}    file
-       * @return {Promise}
-       */
-      function readFileAsText (file) {
-        var deferred = $q.defer();
-        var reader   = new FileReader();
-
-        reader.onload = function () {
-          return deferred.resolve(reader.result);
-        };
-
-        reader.onerror = function () {
-          return deferred.reject(reader.error);
-        };
-
-        reader.readAsBinaryString(file);
-
-        return deferred.promise;
       }
 
       /**
